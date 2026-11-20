@@ -160,7 +160,7 @@ input[type=text],input[type=number],input[type=date]{width:100%;border:1px solid
 .dcol .b{width:100%;border-radius:7px 7px 3px 3px;background:var(--grad);min-height:3px}
 .dcol .v{font-size:10px;color:var(--muted);font-variant-numeric:tabular-nums}
 .dcol .d{font-size:11px;color:var(--muted);font-weight:600}
-.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(90px + env(safe-area-inset-bottom,0px));background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:999px;font-size:14px;font-weight:600;z-index:60;max-width:90vw;text-align:center}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(142px + env(safe-area-inset-bottom,0px));background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:999px;font-size:14px;font-weight:600;z-index:60;max-width:90vw;text-align:center}
 
 /* setup */
 .setup{padding:22px;margin-top:20px}
@@ -199,7 +199,7 @@ input[type=text],input[type=number],input[type=date]{width:100%;border:1px solid
     </button>
   </div>
 </nav>
-<button class="add fab" id="fab" data-act="add" hidden><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>Add</button>
+<button class="add fab" id="fab" data-act="add" hidden><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg><span>Add</span></button>
 
 <div class="overlay" id="overlay" hidden><div class="sheet" id="sheet" role="dialog" aria-modal="true"></div></div>
 <div class="toast" id="toast" hidden></div>
@@ -225,7 +225,7 @@ const rowAmt=e=>`<div class="amt num">${e.cur&&e.cur===disp&&e.orig!=null?fmtIn(
 const today=()=>{const d=new Date();return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0")};
 const dayLabel=s=>new Date(s+"T00:00:00").toLocaleDateString("en-GB",{weekday:"short",day:"numeric",month:"short"});
 
-let budgets={}, bscope="me", rates=Object.assign({},DEFAULT_RATES), disp="SGD", db=null, members=MEMBERS, items=[], metaLoaded=false, slow=false, tab="feed", me=null, choosingMe=false, form=null, toastT=null;
+let pers=[], pform=null, budgets={}, bscope="me", rates=Object.assign({},DEFAULT_RATES), disp="SGD", db=null, members=MEMBERS, items=[], metaLoaded=false, slow=false, tab="feed", me=null, choosingMe=false, form=null, toastT=null;
 try{me=localStorage.getItem("triptab_me");{const c=localStorage.getItem("triptab_cur");if(c==="USD"||c==="PHP")disp=c}}catch(e){}
 
 function toast(msg){const t=$("#toast");t.textContent=msg;t.hidden=false;clearTimeout(toastT);toastT=setTimeout(()=>t.hidden=true,3200)}
@@ -286,6 +286,7 @@ function render(){
   }
   chip.hidden=false;chip.innerHTML=avatar(me,true)+esc(mName(me));
   tabs.hidden=false;fab.hidden=false;
+  fab.querySelector("span").textContent=(tab==="bud"&&bscope==="me")?"Add my spending":"Add";
   tabs.querySelectorAll("[data-tab]").forEach(b=>b.setAttribute("aria-current",b.dataset.tab===tab?"page":"false"));
   const c=compute();
   app.innerHTML=tab==="feed"?feedView(c):tab==="bal"?balView(c):budView(c);
@@ -326,11 +327,13 @@ function feedView(c){
 function budView(){
   const all=bscope==="all";
   const exps=items.filter(e=>e.kind!=="payment");
-  const rows=exps.map(e=>({cat:e.cat||"Other",date:e.date||today(),v:all?e.cents:(sharesOf(e)[me]||0)})).filter(r=>r.v>0);
+  const mineP=pers.filter(p=>p.by===me);
+  const rows=exps.map(e=>({cat:e.cat||"Other",date:e.date||today(),v:all?e.cents:(sharesOf(e)[me]||0)})).filter(r=>r.v>0)
+    .concat(all?[]:mineP.map(p=>({cat:p.cat||"Other",date:p.date||today(),v:p.cents})).filter(r=>r.v>0));
   const total=rows.reduce((a,r)=>a+r.v,0);
   const byCat={},byDay={};
   rows.forEach(r=>{byCat[r.cat]=(byCat[r.cat]||0)+r.v;byDay[r.date]=(byDay[r.date]||0)+r.v});
-  const dates=exps.map(e=>e.date||today()).sort();
+  const dates=rows.map(r=>r.date).sort();
   const span=dates.length?Math.max(1,Math.round((new Date(dates[dates.length-1]+"T00:00:00")-new Date(dates[0]+"T00:00:00"))/864e5)+1):1;
   const budget=all?members.reduce((a,m)=>a+(budgets[m.id]||0),0):(budgets[me]||0);
   const left=budget-total,pct=budget>0?Math.min(100,Math.round(total/budget*100)):0;
@@ -349,8 +352,14 @@ function budView(){
   }
   if(!all)h+=`<div style="margin-top:12px;display:flex;gap:8px"><button class="btn primary" data-act="budget">${budget>0?"Change budget":"Set budget"}</button></div>`;
   h+=`</div>`;
+  if(!all){
+    h+=`<h2>My own spending</h2><div class="card">`;
+    if(!mineP.length)h+=`<div class="empty" style="padding:18px"><b>Nothing added yet</b>Log things you pay for yourself, like snacks or souvenirs. They count toward your budget and don't change what anyone owes.</div>`;
+    else h+=`<div class="list">`+mineP.slice().sort((a,b)=>(b.date||"").localeCompare(a.date||"")||(b.createdAt||0)-(a.createdAt||0)).map(p=>`<button class="item" data-act="pedit" data-id="${p.id}"><span class="dot" style="--c:${CATC[p.cat]||CATC.Other}">${esc((p.cat||"Other").slice(0,3).toUpperCase())}</span><span class="mid"><div class="t">${esc(p.desc)}</div><div class="s">${esc(dayLabel(p.date))}</div></span><span class="r">${rowAmt(p)}</span></button>`).join("")+`</div>`;
+    h+=`<div style="padding:12px 14px"><button class="btn primary wide" data-act="padd">Add my own spending</button></div></div>`;
+  }
   if(!rows.length){
-    return h+`<div class="card empty" style="margin-top:16px"><b>Nothing to show yet</b>Spending appears here as expenses are added. To track something only you pay for, add an expense and tick just your own name under Split between.</div>`;
+    return h+`<div class="card empty" style="margin-top:16px"><b>Nothing to total yet</b>Your spending shows up here once you add your own spending or someone adds a shared expense you're part of.</div>`;
   }
   const cats=Object.keys(byCat).sort((a,b)=>byCat[b]-byCat[a]);
   h+=`<h2>By category</h2><div class="card">`+cats.map(k=>`<div class="catrow" style="--c:${CATC[k]||CATC.Other}"><div class="top"><span>${esc(k)}</span><span class="num">${money(byCat[k])} <span class="muted" style="font-weight:500">${Math.round(byCat[k]/total*100)}%</span></span></div><div class="bar"><i style="width:${Math.max(2,byCat[k]/total*100)}%"></i></div></div>`).join("")+`</div>`;
@@ -362,7 +371,7 @@ function budView(){
     const mx=Math.max.apply(null,Object.values(per).concat([1]));
     h+=`<h2>Each person's share</h2><div class="card">`+members.map(m=>`<div class="catrow"><div class="top"><span style="display:flex;align-items:center;gap:8px">${avatar(m.id,true)}${esc(m.name)}</span><span class="num">${money(per[m.id])}</span></div><div class="bar"><i style="width:${Math.max(2,per[m.id]/mx*100)}%"></i></div></div>`).join("")+`</div>`;
   }
-  h+=`<p class="muted" style="font-size:13px;margin-top:14px">${all?"Totals are the full cost of every expense.":"Your spending is your share of each expense, not what you paid up front."} Settling up payments are not counted.</p>`;
+  h+=`<p class="muted" style="font-size:13px;margin-top:14px">${all?"Totals are the full cost of every shared expense. Personal spending is not included.":"Your spending is your share of each shared expense plus the spending you added yourself, not what you paid up front."} Settling up payments are not counted.</p>`;
   return h;
 }
 function balView(c){
@@ -388,7 +397,7 @@ function balView(c){
 
 /* ---------- sheet: add / edit expense ---------- */
 function openSheet(html){const s=$("#sheet");s.innerHTML=html;$("#overlay").hidden=false;document.body.style.overflow="hidden"}
-function closeSheet(){$("#overlay").hidden=true;$("#sheet").innerHTML="";form=null;document.body.style.overflow=""}
+function closeSheet(){$("#overlay").hidden=true;$("#sheet").innerHTML="";form=null;pform=null;document.body.style.overflow=""}
 function openForm(e){
   const ecur=e?(e.cur||"SGD"):disp;
   form=e?{id:e.id,paidBy:e.paidBy,split:new Set(e.split||[]),cat:e.cat||"Food",cur:ecur,confirmDel:false}
@@ -442,6 +451,36 @@ async function saveExpense(){
 async function deleteDoc(id){
   try{await db.doc("expenses/"+id).delete();closeSheet();toast("Deleted")}catch(err){toast("Couldn't delete.")}
 }
+function openPersonal(p){
+  pform={id:p?p.id:null,cur:p?(p.cur||"SGD"):disp,cat:p?(p.cat||"Food"):"Food",confirmDel:false};
+  const amt=p?((pform.cur!=="SGD"&&p.orig!=null?p.orig:p.cents)/100).toFixed(2):"";
+  openSheet(`<div class="head"><h3>${p?"Edit my spending":"Add my own spending"}</h3><button class="x" data-act="close" aria-label="Close">×</button></div>
+  <p class="muted" style="margin:0 0 14px;font-size:13px">Just for your own tracking. It doesn't change what anyone owes.</p>
+  <div class="field" style="margin-top:0"><label for="p_amt">Amount</label><div class="amountbox"><span id="p_sym"></span><input id="p_amt" type="number" inputmode="decimal" step="0.01" min="0" placeholder="0.00" value="${amt}"><div class="seg" id="p_cur"></div></div></div>
+  <div class="field"><label for="p_desc">What was it for?</label><input id="p_desc" type="text" placeholder="e.g. Souvenirs" value="${p?esc(p.desc):""}" autocomplete="off"></div>
+  <div class="field"><div class="lab">Category</div><div class="chips" id="p_cat"></div></div>
+  <div class="field"><label for="p_date">Date</label><input id="p_date" type="date" value="${p?esc(p.date):today()}"></div>
+  <div class="field"><button class="btn primary wide" data-act="psave">${p?"Save changes":"Save"}</button></div>
+  ${p?`<div class="field" style="margin-top:8px"><button class="btn danger wide" id="p_del" data-act="pdel">Delete</button></div>`:""}`);
+  drawP();
+  if(!p)setTimeout(()=>{try{$("#p_amt").focus()}catch(_){}},60);
+}
+function drawP(){
+  $("#p_sym").textContent=SYM[pform.cur];
+  $("#p_cur").innerHTML=CODES.map(c=>`<button data-act="pcur" data-id="${c}" aria-pressed="${pform.cur===c}">${c}</button>`).join("");
+  $("#p_cat").innerHTML=CATS.map(c=>`<button class="chip txt" data-act="pcat" data-id="${c}" style="--c:${CATC[c]}" aria-pressed="${pform.cat===c}">${c}</button>`).join("");
+}
+async function savePersonal(){
+  const v=parseFloat($("#p_amt").value);
+  if(!(v>0)){toast("Enter an amount greater than 0");return}
+  const orig=Math.round(v*100),cents=pform.cur==="SGD"?orig:Math.round(v/rOf(pform.cur)*100);
+  const old=pform.id?pers.find(x=>x.id===pform.id):null;
+  const data={by:me,desc:$("#p_desc").value.trim()||pform.cat,cents,cur:pform.cur,orig,cat:pform.cat,date:$("#p_date").value||today(),createdAt:(old&&old.createdAt)||Date.now()};
+  try{
+    if(pform.id)await db.doc("personal/"+pform.id).set(data);else await db.collection("personal").add(data);
+    closeSheet();pform=null;toast("Saved");
+  }catch(err){toast("Couldn't save. Ask for Contributor access to the link.")}
+}
 function openBudget(){
   const cur=budgets[me]||0,v=cur?(cur/100*rOf(disp)).toFixed(2):"";
   openSheet(`<div class="head"><h3>Your trip budget</h3><button class="x" data-act="close" aria-label="Close">×</button></div>
@@ -473,7 +512,7 @@ document.addEventListener("click",async ev=>{
   const t=ev.target.closest("[data-act],[data-tab]");if(!t)return;
   if(t.dataset.tab){tab=t.dataset.tab;render();window.scrollTo(0,0);return}
   const a=t.dataset.act,id=t.dataset.id;
-  if(a==="add")openForm(null);
+  if(a==="add"){if(tab==="bud"&&bscope==="me")openPersonal(null);else openForm(null)}
   else if(a==="edit"){const e=items.find(x=>x.id===id);if(e)openForm(e)}
   else if(a==="close")closeSheet();
   else if(a==="paidBy"){form.paidBy=id;drawChips()}
@@ -483,6 +522,15 @@ document.addEventListener("click",async ev=>{
   else if(a==="disp"){disp=id;try{localStorage.setItem("triptab_cur",id)}catch(_){}render()}
   else if(a==="rate")openRate();
   else if(a==="bscope"){bscope=id;render()}
+  else if(a==="padd")openPersonal(null);
+  else if(a==="pedit"){const p=pers.find(x=>x.id===id);if(p)openPersonal(p)}
+  else if(a==="pcur"){pform.cur=id;drawP()}
+  else if(a==="pcat"){pform.cat=id;drawP()}
+  else if(a==="psave")savePersonal();
+  else if(a==="pdel"){
+    if(!pform.confirmDel){pform.confirmDel=true;t.textContent="Tap again to delete";setTimeout(()=>{if(pform&&t.isConnected){pform.confirmDel=false;t.textContent="Delete"}},4000)}
+    else{const pid=pform.id;try{await db.doc("personal/"+pid).delete();closeSheet();toast("Deleted")}catch(err){toast("Couldn't delete.")}}
+  }
   else if(a==="budget")openBudget();
   else if(a==="saveBudget"){
     const v=parseFloat($("#b_in").value);
@@ -618,6 +666,7 @@ async function connectSync(){
     rates=Object.assign({},DEFAULT_RATES,d&&d.rate>0?{USD:d.rate}:{},d&&d.rates||{});
     render();
   },err=>{clearTimeout(timer);metaLoaded=true;render()});
+  db.collection("personal").onSnapshot(s=>{pers=s.docs.map(d=>Object.assign({id:d.id},d.data()));render()},()=>{});
   db.collection("budgets").onSnapshot(s=>{budgets={};s.docs.forEach(d=>{const x=d.data();if(x&&x.cents>0)budgets[d.id]=x.cents});render()},()=>{});
   db.collection("expenses").onSnapshot(s=>{items=s.docs.map(d=>Object.assign({id:d.id},d.data()));render()},()=>{});
 })();
