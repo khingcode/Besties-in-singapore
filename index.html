@@ -466,7 +466,7 @@ function localDb(){
 const loadScript=src=>new Promise((res,rej)=>{const t=document.createElement("script");t.src=src;t.onload=res;t.onerror=()=>rej(new Error("load "+src));document.head.appendChild(t)});
 const waitOnline=()=>new Promise(res=>{if(navigator.onLine)return setTimeout(res,3000);window.addEventListener("online",()=>res(),{once:true})});
 const syncStatus=msg=>{document.getElementById("app").innerHTML='<div class="empty">'+msg+'</div>'};
-function parseCode(v){v=(v||"").trim();const m=v.match(/(?:^|[#&?])k=([A-Za-z0-9_-]+)/);if(m)v=m[1];return /^[A-Za-z0-9_-]{16,64}$/.test(v)?v:null}
+function parseCode(v){v=(v||"").trim();const m=v.match(/(?:^|[#&?])k=([A-Za-z0-9_-]+)/);if(m)v=m[1];return /^[A-Za-z0-9_-]{2,64}$/.test(v)?v:null}
 function askCode(){
   return new Promise(resolve=>{
     document.getElementById("app").innerHTML=`<div class="card setup"><h2>Enter the trip code</h2><p>Paste the trip link or code that was sent to you. You only need to do this once on this phone.</p>
