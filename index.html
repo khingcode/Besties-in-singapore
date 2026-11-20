@@ -192,6 +192,7 @@ const CATC={Food:"#F2491F",Transport:"#1B9AD8",Stay:"#8A5CF6",Sights:"#0FA56F",S
 const CATS=["Food","Transport","Stay","Sights","Shopping","Other"];
 const $=s=>document.querySelector(s);
 const esc=s=>String(s==null?"":s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const MEMBERS=[{id:"m1",name:"Chichi"},{id:"m2",name:"Jiliane"},{id:"m3",name:"Khing"}];
 const CODES=["SGD","USD","PHP"];
 const SYM={SGD:"S$",USD:"US$",PHP:"\u20B1"};
 const DEFAULT_RATES={USD:0.77,PHP:44}; // units per S$1, editable in the app
@@ -204,7 +205,7 @@ const rowAmt=e=>`<div class="amt num">${e.cur&&e.cur===disp&&e.orig!=null?fmtIn(
 const today=()=>{const d=new Date();return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0")};
 const dayLabel=s=>new Date(s+"T00:00:00").toLocaleDateString("en-GB",{weekday:"short",day:"numeric",month:"short"});
 
-let rates=Object.assign({},DEFAULT_RATES), disp="SGD", db=null, members=null, items=[], metaLoaded=false, slow=false, tab="feed", me=null, choosingMe=false, form=null, toastT=null;
+let rates=Object.assign({},DEFAULT_RATES), disp="SGD", db=null, members=MEMBERS, items=[], metaLoaded=false, slow=false, tab="feed", me=null, choosingMe=false, form=null, toastT=null;
 try{me=localStorage.getItem("triptab_me");{const c=localStorage.getItem("triptab_cur");if(c==="USD"||c==="PHP")disp=c}}catch(e){}
 
 function toast(msg){const t=$("#toast");t.textContent=msg;t.hidden=false;clearTimeout(toastT);toastT=setTimeout(()=>t.hidden=true,3200)}
@@ -259,7 +260,6 @@ function render(){
   tabs.hidden=true;chip.hidden=true;
   if(!db){app.innerHTML=`<div class="card empty"><b>Open this from the shared link</b>Sign in to Claude and open the link your friend sent. Your trip data is stored there so all three of you see the same list.</div>`;return}
   if(!metaLoaded){app.innerHTML=`<div class="empty">${slow?"Can't reach the shared data yet. Check your connection; it will load when it answers.":"Loading your trip…"}</div>`;return}
-  if(!members||!members.length){renderSetup(app);return}
   if(!me||!members.some(m=>m.id===me)||choosingMe){
     app.innerHTML=`<div class="card setup"><h2>Who are you?</h2><p>Pick your name so the app can show what you owe or are owed.</p><div class="who">${members.map(m=>`<button data-act="pickMe" data-id="${m.id}">${avatar(m.id)}${esc(m.name)}</button>`).join("")}</div></div>`;
     return;
@@ -269,13 +269,6 @@ function render(){
   tabs.querySelectorAll("[data-tab]").forEach(b=>b.setAttribute("aria-current",b.dataset.tab===tab?"page":"false"));
   const c=compute();
   app.innerHTML=tab==="feed"?feedView(c):balView(c);
-}
-function renderSetup(app){
-  app.innerHTML=`<div class="card setup"><h2>Who's going to Singapore?</h2><p>Enter everyone's first name. You can start adding expenses right after.</p>
-  <div class="field"><label for="n0">Traveller 1</label><input type="text" id="n0" value="Chichi" autocomplete="off"></div>
-  <div class="field"><label for="n1">Traveller 2</label><input type="text" id="n1" value="Jiliane" autocomplete="off"></div>
-  <div class="field"><label for="n2">Traveller 3 (you)</label><input type="text" id="n2" placeholder="Your name" autocomplete="off"></div>
-  <div class="field"><button class="btn primary wide" data-act="startTrip">Start tracking</button></div></div>`;
 }
 function curRow(){
   return `<div class="currow"><div class="seg" role="group" aria-label="Display currency">${CODES.map(c=>`<button data-act="disp" data-id="${c}" aria-pressed="${disp===c}">${SYM[c]} ${c}</button>`).join("")}</div>
@@ -421,7 +414,7 @@ document.addEventListener("click",async ev=>{
     const u=parseFloat($("#r_USD").value),p=parseFloat($("#r_PHP").value);
     if(!(u>0.05&&u<5)){toast("US$ rate should be between 0.05 and 5");return}
     if(!(p>1&&p<500)){toast("\u20B1 rate should be between 1 and 500");return}
-    try{await db.doc("meta/trip").update({rates:{USD:u,PHP:p}});closeSheet();toast("Rates updated")}catch(err){toast("Couldn't save. Ask for Contributor access to the link.")}
+    try{await db.doc("meta/trip").set({title:"Singapore",rates:{USD:u,PHP:p}});closeSheet();toast("Rates updated")}catch(err){toast("Couldn't save. Ask for Contributor access to the link.")}
   }
   else if(a==="save")saveExpense();
   else if(a==="del"){
@@ -440,12 +433,6 @@ document.addEventListener("click",async ev=>{
   }
   else if(a==="pickMe"){me=id;choosingMe=false;try{localStorage.setItem("triptab_me",id)}catch(_){}render()}
   else if(a==="switchMe"){choosingMe=true;render()}
-  else if(a==="startTrip"){
-    const names=[0,1,2].map(i=>$("#n"+i).value.trim()).filter(Boolean);
-    if(names.length<2){toast("Enter at least two names");return}
-    try{await db.doc("meta/trip").set({title:"Singapore",members:names.map((n,i)=>({id:"m"+(i+1),name:n})),rates:rates})}
-    catch(err){toast("Couldn't save. Ask for Contributor access to the link.")}
-  }
 });
 
 
@@ -484,11 +471,11 @@ function localDb(){
   db.doc("meta/trip").onSnapshot(s=>{
     clearTimeout(timer);metaLoaded=true;
     const d=s.exists?s.data():null;
-    members=d&&Array.isArray(d.members)?d.members:[];
+    members=MEMBERS;
     if(d&&d.title)$("#title").textContent=d.title;
     rates=Object.assign({},DEFAULT_RATES,d&&d.rate>0?{USD:d.rate}:{},d&&d.rates||{});
     render();
-  },err=>{clearTimeout(timer);metaLoaded=true;members=[];render()});
+  },err=>{clearTimeout(timer);metaLoaded=true;render()});
   db.collection("expenses").onSnapshot(s=>{items=s.docs.map(d=>Object.assign({id:d.id},d.data()));render()},()=>{});
 })();
 })();
