@@ -13,12 +13,13 @@ On a phone, use **Share → Add to Home Screen** (iPhone, in Safari) or **Instal
 - Edit or delete any expense or payment
 - Works offline once loaded; light and dark themes; built for phones
 
-## Important: where the data lives
-This version saves everything **on the phone you use it on**. It works fully offline, but Chichi's, Jiliane's and your phones each keep their own separate list. They do not sync with each other yet. Syncing needs a small online database, which is the next step.
+## Where the data lives
+Until syncing is switched on, everything is saved **on the phone you use it on**, so each phone has its own list. To share one list between all three phones, follow [SYNC-SETUP.md](SYNC-SETUP.md). With syncing on, the app still works offline and catches up when anyone reconnects.
 
 ## Files
 - `index.html` is the whole app.
 - `manifest.webmanifest`, `icon-192.png`, `icon-512.png` make it installable.
 - `sw.js` is the service worker that lets it open offline.
+- `firebase-config.js`, `vendor/` and `firestore.rules` are for syncing (see SYNC-SETUP.md).
 
 Profile photos are not included, because this repository is public. To show them, fill the `PHOTOS` array near the top of the script in `index.html` with small square `data:` image URIs, in the order the travellers are entered during setup.

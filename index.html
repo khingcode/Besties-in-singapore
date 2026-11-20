@@ -8,6 +8,7 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Trip Tab">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
+<script src="firebase-config.js"></script>
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon-192.png">
 <link rel="apple-touch-icon" href="icon-192.png">
@@ -385,6 +386,7 @@ function openRate(){
   <div class="field" style="margin-top:0"><label for="r_USD">US$ for every S$1</label><input id="r_USD" type="number" inputmode="decimal" step="0.0001" value="${rOf("USD")}"></div>
   <div class="field"><label for="r_PHP">\u20B1 for every S$1</label><input id="r_PHP" type="number" inputmode="decimal" step="0.01" value="${rOf("PHP")}"></div>
   <p class="muted" style="font-size:13px">Everyone sees the same rates. Use the rates you actually get (your card or a currency app). Expenses are converted to S$ when saved, so changing a rate later won't alter them.</p>
+  ${window.__tripCode?`<div class="field"><label for="r_link">Trip link (send to friends)</label><input id="r_link" type="text" readonly value="${esc(location.origin+location.pathname+"#k="+window.__tripCode)}" onfocus="this.select()"></div>`:""}
   <div class="field"><button class="btn primary wide" data-act="saveRate">Save rates</button></div>`);
 }
 function openPay(id){
@@ -461,11 +463,72 @@ function localDb(){
   return {doc:docRef,collection:colRef};
 }
 
+const loadScript=src=>new Promise((res,rej)=>{const t=document.createElement("script");t.src=src;t.onload=res;t.onerror=()=>rej(new Error("load "+src));document.head.appendChild(t)});
+const waitOnline=()=>new Promise(res=>{if(navigator.onLine)return setTimeout(res,3000);window.addEventListener("online",()=>res(),{once:true})});
+const syncStatus=msg=>{document.getElementById("app").innerHTML='<div class="empty">'+msg+'</div>'};
+function parseCode(v){v=(v||"").trim();const m=v.match(/(?:^|[#&?])k=([A-Za-z0-9_-]+)/);if(m)v=m[1];return /^[A-Za-z0-9_-]{16,64}$/.test(v)?v:null}
+function askCode(){
+  return new Promise(resolve=>{
+    document.getElementById("app").innerHTML=`<div class="card setup"><h2>Enter the trip code</h2><p>Paste the trip link or code that was sent to you. You only need to do this once on this phone.</p>
+    <div class="field"><label for="tc">Trip link or code</label><input type="text" id="tc" autocomplete="off" autocapitalize="off" spellcheck="false"></div>
+    <div class="field"><button class="btn primary wide" id="tcgo">Join trip</button></div><p id="tcerr" class="neg" style="margin-top:10px" hidden></p></div>`;
+    const go=()=>{const c=parseCode(document.getElementById("tc").value);if(!c){const e=document.getElementById("tcerr");e.textContent="That doesn't look like a trip code. Paste the full link or code again.";e.hidden=false;return}resolve(c)};
+    document.getElementById("tcgo").addEventListener("click",go);
+    document.getElementById("tc").addEventListener("keydown",e=>{if(e.key==="Enter")go()});
+  });
+}
+function getCode(){
+  let c=null;
+  try{const h=parseCode(location.hash.slice(1));if(h){c=h;localStorage.setItem("triptab_code",h);history.replaceState(null,"",location.pathname+location.search)}}catch(e){}
+  if(!c){try{c=localStorage.getItem("triptab_code")}catch(e){}}
+  return c;
+}
+async function connectSync(){
+  let code=getCode();
+  if(!code){code=await askCode();try{localStorage.setItem("triptab_code",code)}catch(e){}}
+  window.__tripCode=code;
+  syncStatus("Connecting…");
+  for(;;){
+    try{if(!window.firebase)for(const f of ["app","auth","firestore"])await loadScript("vendor/firebase-"+f+"-compat.js");break}
+    catch(e){syncStatus("Can't load the app files. Connect to the internet once to finish setup.");await waitOnline()}
+  }
+  firebase.initializeApp(window.TRIP_FIREBASE);
+  const auth=firebase.auth(),fs=firebase.firestore();
+  try{await fs.enablePersistence({synchronizeTabs:true})}catch(e){}
+  let user=await new Promise(res=>{const un=auth.onAuthStateChanged(u=>{un();res(u)})});
+  while(!user){
+    try{const c=await auth.signInAnonymously();user=c.user}
+    catch(e){syncStatus(navigator.onLine?"Couldn't sign in to sync ("+esc(e.code||e.message)+"). Retrying…":"Connect to the internet once to finish setup.");await waitOnline()}
+  }
+  const base="trips/"+code+"/";
+  const snapDoc=s=>({id:s.id,exists:s.exists,data:()=>s.exists?s.data():undefined,metadata:s.metadata});
+  const bad=e=>window.dispatchEvent(new CustomEvent("syncerror",{detail:e}));
+  // Writes are queued on the phone and sent when online, so they return at once.
+  const docRef=path=>{const r=()=>fs.doc(base+path);return{id:path.split("/").pop(),path,
+    async get(){return snapDoc(await r().get())},
+    set(d){r().set(d).catch(bad);return Promise.resolve()},
+    update(d){r().update(d).catch(bad);return Promise.resolve()},
+    delete(){r().delete().catch(bad);return Promise.resolve()},
+    onSnapshot(next,err){return r().onSnapshot(s=>next(snapDoc(s)),err)}}};
+  const colRef=path=>({path,
+    doc:id=>docRef(path+"/"+(id||fs.collection(base+path).doc().id)),
+    async add(d){const r=fs.collection(base+path).doc();r.set(d).catch(bad);return docRef(path+"/"+r.id)},
+    onSnapshot(next,err){return fs.collection(base+path).onSnapshot(s=>next({docs:s.docs.map(snapDoc),size:s.size,empty:s.empty}),err)}});
+  const note=document.getElementById("localnote");
+  const upd=()=>{note.textContent="Offline. Changes are saved on this phone and will sync when you're back online.";note.hidden=navigator.onLine};
+  window.addEventListener("online",upd);window.addEventListener("offline",upd);upd();
+  window.addEventListener("syncerror",e=>toast("A change couldn't sync: "+((e.detail&&e.detail.code)||"error")));
+  return {doc:docRef,collection:colRef};
+}
+
 /* ---------- data ---------- */
 (async()=>{
   render();
   try{db=window.claude&&window.claude.use?await window.claude.use("db"):null}catch(e){db=null}
-  if(!db){db=localDb();const ln=document.getElementById("localnote");if(ln)ln.hidden=false}
+  if(!db){
+    if(window.TRIP_FIREBASE){try{db=await connectSync()}catch(e){syncStatus("Couldn't start sync: "+esc(e.message||e));return}}
+    else{db=localDb();const ln=document.getElementById("localnote");if(ln)ln.hidden=false}
+  }
   if(!db){render();return}
   const timer=setTimeout(()=>{slow=true;if(!metaLoaded)render()},10000);
   db.doc("meta/trip").onSnapshot(s=>{

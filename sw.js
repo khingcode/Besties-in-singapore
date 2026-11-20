@@ -1,5 +1,6 @@
-const V = "triptab-v1";
-const CORE = ["./", "index.html", "manifest.webmanifest", "icon-192.png", "icon-512.png"];
+const V = "triptab-v2";
+const CORE = ["./", "index.html", "manifest.webmanifest", "icon-192.png", "icon-512.png", "firebase-config.js",
+  "vendor/firebase-app-compat.js", "vendor/firebase-auth-compat.js", "vendor/firebase-firestore-compat.js"];
 self.addEventListener("install", e => {
   e.waitUntil(caches.open(V).then(c => c.addAll(CORE)).then(() => self.skipWaiting()));
 });
@@ -9,7 +10,10 @@ self.addEventListener("activate", e => {
 self.addEventListener("fetch", e => {
   const req = e.request;
   if (req.method !== "GET") return;
+  const host = new URL(req.url).hostname;
   const same = new URL(req.url).origin === location.origin;
+  // Only handle this site's files and Google Fonts. Sync traffic must never be cached.
+  if (!same && host !== "fonts.googleapis.com" && host !== "fonts.gstatic.com") return;
   if (same) {
     // Network first so updates arrive; fall back to the saved copy when offline.
     e.respondWith(fetch(req).then(res => {

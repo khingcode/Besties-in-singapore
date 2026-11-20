@@ -1,0 +1,10 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Everything lives under trips/<trip code>/... Only signed-in (anonymous) users can read or write it,
+    // and nobody can list the trips, so the long trip code works like a password.
+    match /trips/{tripId}/{document=**} {
+      allow read, write: if request.auth != null;
+    }
+  }
+}
